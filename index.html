@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>資産運用シミュレーション</title>
+    <!-- Chart.jsの読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        h1 {
+            font-size: 1.4rem;
+            margin-bottom: 20px;
+            text-align: center;
+            color: #2c3e50;
+        }
+        .control-group {
+            margin-bottom: 16px;
+        }
+        label {
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+            font-size: 0.9rem;
+            margin-bottom: 6px;
+        }
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+        .summary-box {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin: 24px 0;
+            padding: 16px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+        .summary-item {
+            text-align: center;
+        }
+        .summary-label {
+            font-size: 0.85rem;
+            color: #6c757d;
+        }
+        .summary-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #2b6cb0;
+            margin-top: 4px;
+        }
+        .chart-container {
+            position: relative;
+            height: 350px;
+            width: 100%;
+        }
+        /* 免責事項のスタイル（小さめ・グレーの文字） */
+        .disclaimer {
+            font-size: 0.75rem;
+            color: #a0aec0;
+            text-align: justify;
+            margin-top: 24px;
+            padding-top: 12px;
+            border-top: 1px solid #edf2f7;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>資産運用シミュレーション</h1>
+
+    <div class="control-group">
+        <label>初期投資額: <span id="val-initial">1,000,000 円</span></label>
+        <input type="range" id="initial" min="0" max="5000000" step="100000" value="1000000">
+    </div>
+
+    <div class="control-group">
+        <label>毎月の追加積立: <span id="val-monthly">50,000 円</span></label>
+        <input type="range" id="monthly" min="0" max="150000" step="5000" value="50000">
+    </div>
+
+    <div class="control-group">
+        <label>想定年利: <span id="val-rate">7.0 %</span></label>
+        <input type="range" id="rate" min="1" max="15" step="0.5" value="7">
+    </div>
+
+    <div class="control-group">
+        <label>運用期間: <span id="val-years">20 年</span></label>
+        <input type="range" id="years" min="1" max="30" step="1" value="20">
+    </div>
+
+    <div class="summary-box">
+        <div class="summary-item">
+            <div class="summary-label">総投資元本</div>
+            <div class="summary-value" id="res-principal">-</div>
+        </div>
+        <div class="summary-item">
+            <div class="summary-label">最終的な資産総額</div>
+            <div class="summary-value" id="res-total">-</div>
+        </div>
+        <div class="summary-item">
+            <div class="summary-label">運用益（増えた分）</div>
+            <div class="summary-value" id="res-profit">-</div>
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="simulationChart"></canvas>
+    </div>
+
+    <!-- 免責事項のエリア -->
+    <div class="disclaimer">
+        ※このシミュレーションはあくまで机上の計算であり、将来の運用成果を保証するものではありません。投資の最終判断はご自身で行ってください。
+    </div>
+</div>
+
+<script>
+    const initialInput = document.getElementById('initial');
+    const monthlyInput = document.getElementById('monthly');
+    const rateInput = document.getElementById('rate');
+    const yearsInput = document.getElementById('years');
+
+    const valInitial = document.getElementById('val-initial');
+    const valMonthly = document.getElementById('val-monthly');
+    const valRate = document.getElementById('val-rate');
+    const valYears = document.getElementById('val-years');
+
+    const resPrincipal = document.getElementById('res-principal');
+    const resTotal = document.getElementById('res-total');
+    const resProfit = document.getElementById('res-profit');
+
+    const ctx = document.getElementById('simulationChart').getContext('2d');
+    let simulationChart;
+
+    function formatCurrency(num) {
+        return Math.round(num).toLocaleString() + ' 円';
+    }
+
+    function updateSimulation() {
+        const initial = parseFloat(initialInput.value);
+        const monthly = parseFloat(monthlyInput.value);
+        const rate = parseFloat(rateInput.value) / 100;
+        const maxYears = parseInt(yearsInput.value);
+
+        valInitial.innerText = formatCurrency(initial);
+        valMonthly.innerText = formatCurrency(monthly);
+        valRate.innerText = (rate * 100).toFixed(1) + ' %';
+        valYears.innerText = maxYears + ' 年';
+
+        const labels = [];
+        const totalData = [];
+        const principalData = [];
+
+        for (let t = 0; t <= maxYears; t++) {
+            labels.push(t === 0 ? '開始' : t + '年後');
+
+            const principal = initial + (monthly * 12 * t);
+            principalData.push(principal);
+
+            let total = 0;
+            if (rate > 0) {
+                const monthlyRate = rate / 12;
+                const months = t * 12;
+                total = initial * Math.pow(1 + monthlyRate, months) + monthly * ((Math.pow(1 + monthlyRate, months) - 1) / monthlyRate);
+            } else {
+                total = principal;
+            }
+            totalData.push(Math.round(total));
+        }
+
+        const finalPrincipal = principalData[principalData.length - 1];
+        const finalTotal = totalData[totalData.length - 1];
+        const finalProfit = finalTotal - finalPrincipal;
+
+        resPrincipal.innerText = formatCurrency(finalPrincipal);
+        resTotal.innerText = formatCurrency(finalTotal);
+        resProfit.innerText = '+' + formatCurrency(finalProfit);
+
+        if (simulationChart) {
+            simulationChart.data.labels = labels;
+            simulationChart.data.datasets[0].data = totalData;
+            simulationChart.data.datasets[1].data = principalData;
+            simulationChart.update();
+        } else {
+            simulationChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '資産総額',
+                            data: totalData,
+                            borderColor: '#3182ce',
+                            backgroundColor: 'rgba(49, 130, 206, 0.1)',
+                            fill: true,
+                            tension: 0.2
+                        },
+                        {
+                            label: '投資元本',
+                            data: principalData,
+                            borderColor: '#a0aec0',
+                            borderDash: [5, 5],
+                            fill: false,
+                            tension: 0.2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            ticks: {
+                                callback: function(value) {
+                                    return (value / 10000) + '万円';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    [initialInput, monthlyInput, rateInput, yearsInput].forEach(input => {
+        input.addEventListener('input', updateSimulation);
+    });
+
+    updateSimulation();
+</script>
+
+</body>
+</html>
